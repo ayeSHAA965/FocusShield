@@ -1,0 +1,1162 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Shield | Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .proof-option {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin: 12px 0;
+        }
+
+        .proof-option input {
+            width: auto;
+        }
+
+        .task-item {
+            padding: 14px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .task-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            align-items: center;
+        }
+
+        .proof-upload {
+            margin-top: 12px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+
+        .proof-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .proof-preview img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .task-completed {
+            text-decoration: line-through;
+            opacity: 0.65;
+        }
+
+        .proof-label {
+            font-size: 13px;
+            margin-top: 6px;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="navbar">
+    <div class="logo">Focus Shield</div>
+    <div>
+        <span>Welcome, {{ current_user.username }}</span>
+        &nbsp; | &nbsp;
+        <a href="{{ url_for('auth.logout') }}">Logout</a>
+    </div>
+</header>
+
+<main class="container">
+
+    <section class="welcome">
+        <h1>Your Focus Dashboard</h1>
+        <p>Stay focused. Manage distractions. Achieve more.</p>
+    </section>
+
+    <!-- STATISTICS -->
+
+    <section class="stats">
+        <div class="card">
+            <h3>Focus Sessions</h3>
+            <p class="stat-value" id="sessionCount">0</p>
+        </div>
+
+        <div class="card">
+            <h3>Tasks Completed</h3>
+            <p class="stat-value" id="completedCount">0</p>
+        </div>
+
+        <div class="card">
+            <h3>Pending Tasks</h3>
+            <p class="stat-value" id="pendingCount">0</p>
+        </div>
+
+        <div class="card">
+            <h3>Emergency Unlocks</h3>
+            <p class="stat-value" id="unlockCount">0</p>
+        </div>
+    </section>
+
+
+    <!-- TIMER AND APPLICATION PROTECTION -->
+
+    <section class="main-grid">
+
+        <div class="timer-card">
+            <h2>Focus Timer</h2>
+
+            <p>Choose your focus duration</p>
+
+            <select id="durationSelect">
+                <option value="15">15 Minutes</option>
+                <option value="25" selected>25 Minutes</option>
+                <option value="30">30 Minutes</option>
+                <option value="45">45 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="custom">Custom Duration</option>
+            </select>
+
+            <input
+                type="number"
+                id="customDuration"
+                min="1"
+                max="480"
+                placeholder="Enter minutes"
+                style="display:none;"
+            >
+
+            <div class="timer-display" id="timerDisplay">25:00</div>
+
+            <p id="focusStatus">Ready to focus?</p>
+
+            <button
+                class="primary-btn"
+                id="startButton"
+                onclick="startSession()"
+            >
+                Start Focus
+            </button>
+
+            <button
+                class="secondary-btn"
+                id="unlockButton"
+                onclick="confirmEmergencyUnlock()"
+                style="display:none;"
+            >
+                Emergency Unlock
+            </button>
+
+            <p id="timerMessage"></p>
+        </div>
+
+
+        <div class="history-card">
+            <h2>Application Protection</h2>
+
+            <p>
+                Select applications that Focus Shield should block
+                during a focus session.
+            </p>
+
+            <div>
+                <input
+                    type="text"
+                    id="appNameInput"
+                    placeholder="Enter application name"
+                >
+
+                <button
+                    class="secondary-btn"
+                    id="addAppButton"
+                    onclick="addApplication()"
+                >
+                    Add Application
+                </button>
+            </div>
+
+            <p id="appMessage"></p>
+
+            <ul id="appSelection"></ul>
+        </div>
+
+    </section>
+
+
+    <!-- TASK MANAGEMENT -->
+
+    <section class="history-card">
+        <h2>My Tasks</h2>
+
+        <form id="taskForm">
+
+            <input
+                type="text"
+                id="taskTitle"
+                placeholder="Enter task title"
+                required
+            >
+
+            <textarea
+                id="taskDescription"
+                placeholder="Task description (optional)"
+            ></textarea>
+
+            <label class="proof-option">
+                <input
+                    type="checkbox"
+                    id="proofRequired"
+                >
+                Require photo/screenshot proof before completing this task
+            </label>
+
+            <p class="proof-label">
+                If selected, the task will only be completed after you
+                upload proof of your work.
+            </p>
+
+            <button type="submit" class="primary-btn">
+                Add Task
+            </button>
+
+        </form>
+
+        <p id="taskMessage"></p>
+
+        <ul id="taskList"></ul>
+    </section>
+
+
+    <!-- SESSION HISTORY -->
+
+    <section class="history-card">
+        <h2>Recent Focus Sessions</h2>
+        <div id="sessionHistory">
+            Your focus session history will appear here.
+        </div>
+    </section>
+
+</main>
+
+
+<script>
+
+// ==========================================
+// TIMER VARIABLES
+// ==========================================
+
+let sessionRunning = false;
+let sessionId = null;
+let timerInterval = null;
+let remainingSeconds = 25 * 60;
+let elapsedTime = 0;
+
+const timerDisplay = document.getElementById("timerDisplay");
+const startButton = document.getElementById("startButton");
+const unlockButton = document.getElementById("unlockButton");
+const focusStatus = document.getElementById("focusStatus");
+const timerMessage = document.getElementById("timerMessage");
+
+
+// ==========================================
+// TIMER DISPLAY
+// ==========================================
+
+function updateDisplay() {
+
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    timerDisplay.textContent =
+        String(minutes).padStart(2, "0") + ":" +
+        String(seconds).padStart(2, "0");
+}
+
+
+function getSelectedDuration() {
+
+    const selected = document.getElementById("durationSelect").value;
+
+    if (selected === "custom") {
+
+        const custom = Number(
+            document.getElementById("customDuration").value
+        );
+
+        if (!Number.isInteger(custom) || custom < 1 || custom > 480) {
+            alert("Enter a duration between 1 and 480 minutes.");
+            return null;
+        }
+
+        return custom;
+    }
+
+    return Number(selected);
+}
+
+
+// ==========================================
+// DURATION SELECTION
+// ==========================================
+
+document.getElementById("durationSelect").addEventListener(
+    "change",
+    function () {
+
+        const customInput = document.getElementById("customDuration");
+
+        customInput.style.display =
+            this.value === "custom" ? "block" : "none";
+
+        if (!sessionRunning && this.value !== "custom") {
+            remainingSeconds = Number(this.value) * 60;
+            updateDisplay();
+        }
+    }
+);
+
+
+// ==========================================
+// START FOCUS SESSION
+// ==========================================
+
+async function startSession() {
+
+    if (sessionRunning) return;
+
+    const duration = getSelectedDuration();
+
+    if (!duration) return;
+
+    remainingSeconds = duration * 60;
+    elapsedTime = 0;
+
+    updateDisplay();
+
+    timerMessage.textContent = "Starting protection...";
+
+    try {
+
+        const response = await fetch("/api/focus/start", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.message || "Could not start focus session."
+            );
+        }
+
+        sessionId = data.session_id;
+        sessionRunning = true;
+
+        startButton.style.display = "none";
+        unlockButton.style.display = "inline-block";
+
+        document.getElementById("durationSelect").disabled = true;
+        document.getElementById("customDuration").disabled = true;
+
+        focusStatus.textContent = "Focus protection is ACTIVE.";
+        timerMessage.textContent = "Stay focused. You've got this!";
+
+        loadApplications();
+        startTimer();
+
+    } catch (error) {
+
+        timerMessage.textContent = error.message;
+    }
+}
+
+
+// ==========================================
+// COUNTDOWN TIMER
+// ==========================================
+
+function startTimer() {
+
+    clearInterval(timerInterval);
+
+    timerInterval = setInterval(async function () {
+
+        if (remainingSeconds > 0) {
+
+            remainingSeconds--;
+            elapsedTime++;
+
+            updateDisplay();
+
+        } else {
+
+            clearInterval(timerInterval);
+            await finishSession();
+        }
+
+    }, 1000);
+}
+
+
+// ==========================================
+// AUTOMATIC SESSION COMPLETION
+// ==========================================
+
+async function finishSession() {
+
+    if (!sessionRunning || !sessionId) return;
+
+    clearInterval(timerInterval);
+
+    try {
+
+        const response = await fetch("/api/focus/end", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: sessionId,
+                duration_seconds: elapsedTime
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.message || "Could not complete session."
+            );
+        }
+
+        sessionRunning = false;
+        sessionId = null;
+
+        remainingSeconds = 0;
+        updateDisplay();
+
+        focusStatus.textContent = "Focus session completed!";
+        timerMessage.textContent =
+            "Excellent work! Protection is now OFF.";
+
+        resetControls();
+
+        loadStatistics();
+        loadSessionHistory();
+
+    } catch (error) {
+
+        focusStatus.textContent = "Session completion needs attention.";
+        timerMessage.textContent = error.message;
+    }
+}
+
+
+// ==========================================
+// EMERGENCY UNLOCK CONFIRMATION
+// ==========================================
+
+function confirmEmergencyUnlock() {
+
+    if (!sessionRunning) return;
+
+    const confirmed = confirm(
+        "Are you sure you want to unlock Focus Shield?\n" +
+        "Your current focus session will end immediately."
+    );
+
+    if (confirmed) {
+        emergencyUnlock();
+    }
+}
+
+
+// ==========================================
+// EMERGENCY UNLOCK
+// ==========================================
+
+async function emergencyUnlock() {
+
+    if (!sessionRunning || !sessionId) return;
+
+    clearInterval(timerInterval);
+
+    unlockButton.disabled = true;
+
+    timerMessage.textContent = "Processing emergency unlock...";
+
+    try {
+
+        const response = await fetch("/api/focus/emergency-unlock", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: sessionId,
+                duration_seconds: elapsedTime
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.message || "Emergency unlock failed."
+            );
+        }
+
+        sessionRunning = false;
+        sessionId = null;
+
+        focusStatus.textContent = "Focus protection unlocked.";
+        timerMessage.textContent = data.message;
+
+        resetControls();
+
+        loadStatistics();
+        loadSessionHistory();
+
+    } catch (error) {
+
+        timerMessage.textContent = error.message;
+
+        unlockButton.disabled = false;
+
+        if (sessionRunning) {
+            startTimer();
+        }
+    }
+}
+
+
+// ==========================================
+// RESET TIMER CONTROLS
+// ==========================================
+
+function resetControls() {
+
+    clearInterval(timerInterval);
+
+    sessionRunning = false;
+    sessionId = null;
+
+    startButton.style.display = "inline-block";
+    startButton.textContent = "Start Another Session";
+
+    unlockButton.style.display = "none";
+    unlockButton.disabled = false;
+
+    document.getElementById("durationSelect").disabled = false;
+    document.getElementById("customDuration").disabled = false;
+}
+
+
+// ==========================================
+// APPLICATION PROTECTION
+// ==========================================
+
+async function loadApplications() {
+
+    try {
+
+        const response = await fetch("/api/apps");
+        const data = await response.json();
+
+        displayApplications(data.selected_apps || []);
+
+    } catch (error) {
+
+        document.getElementById("appMessage").textContent =
+            "Unable to load applications.";
+    }
+}
+
+
+function displayApplications(applications) {
+
+    const list = document.getElementById("appSelection");
+
+    list.innerHTML = "";
+
+    applications.forEach(function (app) {
+
+        const item = document.createElement("li");
+
+        const name = document.createElement("span");
+
+        name.textContent = app.replace(/\.exe$/i, "");
+
+        const removeButton = document.createElement("button");
+
+        removeButton.textContent = "Remove";
+        removeButton.className = "secondary-btn";
+
+        removeButton.onclick = function () {
+            removeApplication(app);
+        };
+
+        item.appendChild(name);
+        item.appendChild(removeButton);
+
+        list.appendChild(item);
+    });
+}
+
+
+async function addApplication() {
+
+    if (sessionRunning) {
+        alert("Applications cannot be changed during an active focus session.");
+        return;
+    }
+
+    const input = document.getElementById("appNameInput");
+    const appName = input.value.trim();
+
+    if (!appName) {
+        alert("Enter an application name.");
+        return;
+    }
+
+    const currentResponse = await fetch("/api/apps");
+    const currentData = await currentResponse.json();
+
+    const applications = currentData.selected_apps || [];
+
+    if (applications.some(app =>
+        app.toLowerCase() === appName.toLowerCase() ||
+        app.toLowerCase() === (appName + ".exe").toLowerCase()
+    )) {
+
+        document.getElementById("appMessage").textContent =
+            "Application already selected.";
+
+        return;
+    }
+
+    applications.push(appName);
+
+    await saveApplications(applications);
+
+    input.value = "";
+}
+
+
+async function removeApplication(appName) {
+
+    if (sessionRunning) {
+        alert("Applications cannot be changed during an active focus session.");
+        return;
+    }
+
+    const response = await fetch("/api/apps");
+    const data = await response.json();
+
+    const applications = (data.selected_apps || []).filter(
+        app => app.toLowerCase() !== appName.toLowerCase()
+    );
+
+    await saveApplications(applications);
+}
+
+
+async function saveApplications(applications) {
+
+    try {
+
+        const response = await fetch("/api/apps", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                blocked_apps: applications
+            })
+        });
+
+        const data = await response.json();
+
+        document.getElementById("appMessage").textContent =
+            data.message || "Application selection updated.";
+
+        if (response.ok && data.success) {
+            displayApplications(data.selected_apps || []);
+        }
+
+    } catch (error) {
+
+        document.getElementById("appMessage").textContent =
+            "Unable to update applications.";
+    }
+}
+
+
+// ==========================================
+// TASK MANAGEMENT
+// ==========================================
+
+async function loadTasks() {
+
+    try {
+
+        const response = await fetch("/api/tasks");
+        const data = await response.json();
+
+        displayTasks(data.tasks || []);
+
+    } catch (error) {
+
+        document.getElementById("taskMessage").textContent =
+            "Unable to load tasks.";
+    }
+}
+
+
+// ==========================================
+// DISPLAY TASKS AND PROOFS
+// ==========================================
+
+function displayTasks(tasks) {
+
+    const list = document.getElementById("taskList");
+
+    list.innerHTML = "";
+
+    tasks.forEach(function (task) {
+
+        const item = document.createElement("li");
+        item.className = "task-item";
+
+        const title = document.createElement("span");
+        title.textContent = task.title;
+
+        if (task.status === "Completed") {
+            title.className = "task-completed";
+        }
+
+        item.appendChild(title);
+
+        if (task.description) {
+
+            const description = document.createElement("p");
+            description.textContent = task.description;
+
+            item.appendChild(description);
+        }
+
+        if (task.proof_required) {
+
+            const label = document.createElement("p");
+            label.className = "proof-label";
+
+            label.textContent = "Photo/screenshot proof required";
+
+            item.appendChild(label);
+
+            const uploadArea = document.createElement("div");
+            uploadArea.className = "proof-upload";
+
+            if (task.status !== "Completed") {
+
+                const fileInput = document.createElement("input");
+
+                fileInput.type = "file";
+                fileInput.accept = "image/png,image/jpeg,image/webp";
+                fileInput.multiple = true;
+
+                const uploadButton = document.createElement("button");
+
+                uploadButton.type = "button";
+                uploadButton.className = "secondary-btn";
+                uploadButton.textContent = "Submit Proof";
+
+                uploadButton.onclick = function () {
+                    uploadProof(task.id, fileInput, uploadButton);
+                };
+
+                uploadArea.appendChild(fileInput);
+                uploadArea.appendChild(uploadButton);
+
+            } else {
+
+                const completedMessage = document.createElement("p");
+
+                completedMessage.textContent = "✓ Proof submitted successfully.";
+
+                uploadArea.appendChild(completedMessage);
+            }
+
+            if (task.proofs && task.proofs.length > 0) {
+
+                const preview = document.createElement("div");
+                preview.className = "proof-preview";
+
+                task.proofs.forEach(function (proof) {
+
+                    const link = document.createElement("a");
+                    link.href = proof.url;
+                    link.target = "_blank";
+                    link.rel = "noopener noreferrer";
+
+                    const image = document.createElement("img");
+
+                    image.src = proof.url;
+                    image.alt = "Submitted task proof";
+                    image.loading = "lazy";
+
+                    link.appendChild(image);
+                    preview.appendChild(link);
+                });
+
+                uploadArea.appendChild(preview);
+            }
+
+            item.appendChild(uploadArea);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "task-actions";
+
+        if (!task.proof_required || task.status !== "Completed") {
+
+            const completeButton = document.createElement("button");
+
+            completeButton.type = "button";
+            completeButton.className = "secondary-btn";
+
+            completeButton.textContent =
+                task.status === "Completed" ? "Undo" : "Complete";
+
+            completeButton.onclick = function () {
+                updateTask(task.id);
+            };
+
+            actions.appendChild(completeButton);
+        } else {
+
+            const completedLabel = document.createElement("span");
+
+            completedLabel.textContent = "✓ Completed";
+            actions.appendChild(completedLabel);
+        }
+
+        const deleteButton = document.createElement("button");
+
+        deleteButton.type = "button";
+        deleteButton.textContent = "Delete";
+        deleteButton.className = "secondary-btn";
+
+        deleteButton.onclick = function () {
+            deleteTask(task.id);
+        };
+
+        actions.appendChild(deleteButton);
+        item.appendChild(actions);
+
+        list.appendChild(item);
+    });
+
+    loadStatistics(tasks);
+}
+
+
+// ==========================================
+// ADD TASK
+// ==========================================
+
+document.getElementById("taskForm").addEventListener(
+    "submit",
+    async function (event) {
+
+        event.preventDefault();
+
+        const title = document.getElementById("taskTitle").value.trim();
+
+        const description =
+            document.getElementById("taskDescription").value.trim();
+
+        const proofRequired =
+            document.getElementById("proofRequired").checked;
+
+        if (!title) return;
+
+        try {
+
+            const response = await fetch("/api/tasks", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    title: title,
+                    description: description,
+                    proof_required: proofRequired
+                })
+            });
+
+            const data = await response.json();
+
+            document.getElementById("taskMessage").textContent =
+                data.message || "Task request completed.";
+
+            if (response.ok && data.success) {
+
+                this.reset();
+
+                loadTasks();
+            }
+
+        } catch (error) {
+
+            document.getElementById("taskMessage").textContent =
+                "Unable to add task.";
+        }
+    }
+);
+
+
+// ==========================================
+// UPLOAD TASK PROOF
+// ==========================================
+
+async function uploadProof(taskId, fileInput, uploadButton) {
+
+    const files = fileInput.files;
+
+    if (!files || files.length === 0) {
+        alert("Please select at least one screenshot or photo.");
+        return;
+    }
+
+    const formData = new FormData();
+
+    for (const file of files) {
+        formData.append("proofs", file);
+    }
+
+    uploadButton.disabled = true;
+    uploadButton.textContent = "Uploading...";
+
+    try {
+
+        const response = await fetch(
+            `/api/tasks/${taskId}/proof`,
+            {
+                method: "POST",
+                body: formData
+            }
+        );
+
+        const data = await response.json();
+
+        document.getElementById("taskMessage").textContent =
+            data.message || "Proof upload completed.";
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || "Proof upload failed.");
+        }
+
+        await loadTasks();
+
+    } catch (error) {
+
+        document.getElementById("taskMessage").textContent =
+            error.message;
+
+        uploadButton.disabled = false;
+        uploadButton.textContent = "Submit Proof";
+    }
+}
+
+
+// ==========================================
+// COMPLETE / UNDO TASK
+// ==========================================
+
+async function updateTask(taskId) {
+
+    try {
+
+        const response = await fetch(
+            `/api/tasks/${taskId}/complete`,
+            { method: "POST" }
+        );
+
+        const data = await response.json();
+
+        document.getElementById("taskMessage").textContent =
+            data.message || "Task updated.";
+
+        if (response.ok) {
+            loadTasks();
+        }
+
+    } catch (error) {
+
+        document.getElementById("taskMessage").textContent =
+            "Unable to update task.";
+    }
+}
+
+
+// ==========================================
+// DELETE TASK
+// ==========================================
+
+async function deleteTask(taskId) {
+
+    const confirmed = confirm("Delete this task?");
+
+    if (!confirmed) return;
+
+    try {
+
+        const response = await fetch(
+            `/api/tasks/${taskId}/delete`,
+            { method: "POST" }
+        );
+
+        const data = await response.json();
+
+        document.getElementById("taskMessage").textContent =
+            data.message || "Task deleted.";
+
+        if (response.ok) {
+            loadTasks();
+        }
+
+    } catch (error) {
+
+        document.getElementById("taskMessage").textContent =
+            "Unable to delete task.";
+    }
+}
+
+
+// ==========================================
+// DASHBOARD STATISTICS
+// ==========================================
+
+async function loadStatistics(tasks = null) {
+
+    if (tasks === null) {
+
+        try {
+
+            const response = await fetch("/api/tasks");
+            const data = await response.json();
+
+            tasks = data.tasks || [];
+
+        } catch (error) {
+
+            tasks = [];
+        }
+    }
+
+    const completed = tasks.filter(
+        task => task.status === "Completed"
+    ).length;
+
+    const pending = tasks.filter(
+        task => task.status !== "Completed"
+    ).length;
+
+    document.getElementById("completedCount").textContent = completed;
+    document.getElementById("pendingCount").textContent = pending;
+
+    try {
+
+        const response = await fetch("/api/focus/emergency-unlocks");
+        const data = await response.json();
+
+        document.getElementById("unlockCount").textContent =
+            data.total_uses ?? 0;
+
+    } catch (error) {
+
+        document.getElementById("unlockCount").textContent = "0";
+    }
+}
+
+
+// ==========================================
+// SESSION HISTORY
+// ==========================================
+
+async function loadSessionHistory() {
+
+    try {
+
+        const response = await fetch("/api/focus/history");
+        const data = await response.json();
+
+        const history = document.getElementById("sessionHistory");
+
+        if (!response.ok || !data.sessions || data.sessions.length === 0) {
+
+            history.textContent = "No completed sessions yet.";
+
+            document.getElementById("sessionCount").textContent = "0";
+
+            return;
+        }
+
+        history.innerHTML = "";
+
+        data.sessions.forEach(function (session) {
+
+            const item = document.createElement("p");
+
+            const minutes = Math.floor(
+                (session.duration_seconds || 0) / 60
+            );
+
+            item.textContent =
+                `${session.status} — ${minutes} minutes`;
+
+            history.appendChild(item);
+        });
+
+        document.getElementById("sessionCount").textContent =
+            data.sessions.length;
+
+    } catch (error) {
+
+        document.getElementById("sessionHistory").textContent =
+            "Session history will be available soon.";
+    }
+}
+
+
+// ==========================================
+// INITIAL DASHBOARD LOAD
+// ==========================================
+
+updateDisplay();
+loadApplications();
+loadTasks();
+loadStatistics();
+loadSessionHistory();
+
+</script>
+
+</body>
+</html>
